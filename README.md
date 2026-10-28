@@ -129,4 +129,5 @@ response with a dry-run mode — see [docs/DESIGN.md](docs/DESIGN.md).
 ```bash
 python3 tests/test_policy.py          # the security rules, plain Python
 python3 -m pytest -q                  # against Home Assistant (pytest-homeassistant-custom-component)
+tests/e2e/run.sh                      # docker: upgrade from the previous release in a real Home Assistant
 ```

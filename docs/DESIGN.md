@@ -464,7 +464,13 @@ baseline), `bursts_alerted`.
   - a non-mobile notify action gets no `data`;
   - planted secrets in the new findings;
   - diagnostics stay counts only.
-- End to end in the Home Assistant container: upgrade 0.2.0 → 0.3.0 in place.
+- End to end, in CI (`tests/e2e/run.sh`): a real Home Assistant container, for the pinned and the newest
+  release, upgraded in place from the previous Access Guard release, and installed fresh. It then
+  drives a household and its phone:
+  - a wrong password, a ban lifted, the MFA repairs issue;
+  - a real `mobile_app` registration, its push and a tap through its webhook, then the same tap after
+    the phone's login is signed out;
+  - the log, which must hold no error and no Access Guard warning.
 
 ## Phases
 
