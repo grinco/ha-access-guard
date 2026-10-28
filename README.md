@@ -51,6 +51,18 @@ Access Guard never signs anyone out by itself.
 | `login_after_failures` | a login from an address that failed to sign in at least *N* times (option, default 1) in the 15 minutes before |
 | `sensitive_first` | a new login from outside the home whose first move, within 5 minutes, is a live camera view or an action on a sensitive domain (option: `camera`, `lock`, `alarm_control_panel` by default). `attribution` says whether the exact login (`login`) or only the person (`person`) is known |
 | `long_lived_token` | a long-lived access token was created |
+| `non_admin_internet` | a person who is not an administrator signs in from the internet |
+| `new_country` | a person uses a login from a country new for them (needs the country file; their first country is learnt silently; option: countries that never alert) |
+| `failed_login_burst` | *B* failed sign-in attempts within 5 minutes (option, default 10) from one address, or from at least 3 addresses together; once an hour at most |
+
+**Sign out this login.** With a mobile-app notify action, an alert about one exact login carries a
+*Sign out this login* button (option, on). Tapping it ends that login, checked like the sign-out
+action: the phone's person must be an administrator **and still have a signed-in Home Assistant
+app**, so a phone you signed out cannot tap any more. The reply says what happened. Alerts about
+failed logins never carry the button: anyone can type a household member's username.
+
+**Administrators without MFA** get a repairs issue each (*Settings → Repairs*), gone by itself once
+they enable multi-factor authentication. None is raised if Home Assistant has no MFA module set up.
 
 Good to know:
 - Failed logins are read from Home Assistant's own warning line. If you set
@@ -60,7 +72,13 @@ Good to know:
 - Still camera pictures are fetched without a person's login, so only **live** views count. A
   dashboard that opens with a live camera card counts as watching it.
 - A push to a phone leaves your instance through its provider (Google or Apple) with the person's
-  name and address. It is off unless you set a notify action.
+  name and address, and with the button the login's handle (not a credential). It is off unless you
+  set a notify action.
+- Behind a reverse proxy without `use_x_forwarded_for`, every login shows the proxy's (home) address,
+  so `non_admin_internet` and `new_country` stay silent.
+
+**Upgrading from 0.2.0:** the three new alerts are on, also if you had saved the options form; a
+phone alert now carries the sign-out button unless you turn it off.
 
 ## Security model
 
@@ -103,8 +121,8 @@ filter:
 
 ## Roadmap
 
-Audit history, more detection rules (new country, impossible travel per login, off-hours use, an
-administrator without MFA) and automatic response with a dry-run mode — see [docs/DESIGN.md](docs/DESIGN.md).
+Audit history, more detection rules (impossible travel per login, off-hours use) and automatic
+response with a dry-run mode — see [docs/DESIGN.md](docs/DESIGN.md).
 
 ## Development
 

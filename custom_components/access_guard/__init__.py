@@ -13,7 +13,7 @@ from homeassistant.core import HomeAssistant, ServiceCall
 from homeassistant.exceptions import ServiceValidationError
 from homeassistant.helpers import config_validation as cv
 
-from . import bans, policy
+from . import bans, policy, response
 from .const import DOMAIN, EVENT_UNBANNED, SERVICE_SIGN_OUT, SERVICE_SIGN_OUT_USER, SERVICE_UNBAN
 from .coordinator import AccessGuardCoordinator
 
@@ -40,27 +40,13 @@ async def async_setup(hass: HomeAssistant, config) -> bool:
             raise ServiceValidationError("this Home Assistant version cannot end sessions")
         return coord
 
-    async def remove(coord, who, tokens):
-        # async_remove_refresh_token is a synchronous @callback in Home Assistant: the login
-        # is gone and its connections closed when it returns (DESIGN.md).
-        handles = [policy.handle(t.id) for t in tokens]
-        for h, t in zip(handles, tokens):
-            coord.mark_removed(h, who.id)
-            hass.auth.async_remove_refresh_token(t)
-        _LOGGER.info("%s (%s) signed out %d login(s): %s", who.name, who.id, len(handles), ", ".join(handles))
-        await coord.async_refresh()
-
     async def sign_out(call: ServiceCall) -> None:
         coord = session_ender()
         who = await caller(call)
-        tokens = [t for u in await hass.auth.async_get_users() for t in u.refresh_tokens.values()]
         try:
-            policy.check_caller(who)
-            token = policy.resolve(tokens, call.data["handle"])
-            policy.check_sign_out(who, token.user)
+            await response.async_sign_out(hass, coord, who, call.data["handle"])
         except policy.Refused as err:
             raise ServiceValidationError(str(err)) from err
-        await remove(coord, who, [token])
 
     async def sign_out_user(call: ServiceCall) -> None:
         coord = session_ender()
@@ -77,7 +63,7 @@ async def async_setup(hass: HomeAssistant, config) -> bool:
         except policy.Refused as err:
             raise ServiceValidationError(str(err)) from err
         # Sessions only: the account stays active and its person signs in again.
-        await remove(coord, who, list(target.refresh_tokens.values()))
+        await response.async_remove(hass, coord, who, list(target.refresh_tokens.values()))
 
     async def unban(call: ServiceCall) -> None:
         coord = coordinator()
@@ -101,10 +87,12 @@ async def async_setup(hass: HomeAssistant, config) -> bool:
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     coord = AccessGuardCoordinator(hass, entry)
+    await coord.async_load()        # before the first poll: a restart is not an empty Store
     await coord.async_config_entry_first_refresh()
     entry.runtime_data = coord
     hass.data[DOMAIN] = coord
     coord.async_watch()
+    entry.async_on_unload(response.async_listen_for_taps(hass, coord))
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
     entry.async_on_unload(entry.add_update_listener(_reload))
     return True

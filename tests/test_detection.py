@@ -19,9 +19,14 @@ from custom_components.access_guard.policy import handle
 ANOMALY = f"{DOMAIN}_anomaly"
 
 
+def of(events, kind):
+    return [e for e in events if e.data["kind"] == kind]
+
+
 async def tick(hass):
     async_fire_time_changed(hass, dt_util.utcnow() + SCAN_INTERVAL + timedelta(seconds=1))
-    await hass.async_block_till_done()
+    # The coordinator polls in a background task, which block_till_done does not wait for by default.
+    await hass.async_block_till_done(wait_background_tasks=True)
 
 
 async def setup(hass, **options):
@@ -101,7 +106,7 @@ async def test_a_camera_watched_first_alerts_with_the_exact_login(hass, child, h
     await ws.send_json_auto_id({"type": "camera/stream", "entity_id": "camera.door"})
     await ws.receive_json()
     await hass.async_block_till_done()
-    [e] = events
+    [e] = of(events, "sensitive_first")
     assert (e.data["kind"], e.data["handle"], e.data["target"], e.data["attribution"]) == (
         "sensitive_first", handle(token.id), "camera.door", "login")
 
@@ -116,7 +121,7 @@ async def test_an_unlock_first_alerts_by_person(hass, child):
     await hass.services.async_call("lock", "unlock", {"entity_id": "lock.front"}, blocking=True,
                                    context=Context(user_id=user.id))
     await hass.async_block_till_done()
-    [e] = events
+    [e] = of(events, "sensitive_first")
     assert (e.data["action"], e.data["handle"], e.data["attribution"]) == ("lock.unlock", handle(token.id), "person")
 
 
@@ -132,7 +137,7 @@ async def test_a_harmless_first_move_alerts_nothing(hass, child):
         await hass.services.async_call(domain, service, {"entity_id": f"{domain}.x"}, blocking=True,
                                        context=Context(user_id=user.id))
     await hass.async_block_till_done()
-    assert events == []
+    assert of(events, "sensitive_first") == []
 
 
 async def test_a_fault_in_reporting_never_breaks_the_camera(hass, child, hass_ws_client, monkeypatch):
@@ -208,7 +213,7 @@ async def test_alerts_go_to_the_notify_action_and_a_broken_one_is_tolerated(hass
     await outside_login(hass, user, token_type=TOKEN_TYPE_LONG_LIVED_ACCESS_TOKEN, client_name="a",
                         access_token_expiration=timedelta(days=1))
     await tick(hass)
-    assert [s["title"] for s in sent] == ["Access Guard"] and "long-lived" in sent[0]["message"]
+    assert [s["message"] for s in sent if "long-lived" in s["message"]], sent
     assert not hass.data.get("persistent_notification")
 
     hass.config_entries.async_update_entry(entry, options={"notify_service": "notify.gone"})
@@ -217,12 +222,24 @@ async def test_alerts_go_to_the_notify_action_and_a_broken_one_is_tolerated(hass
                         access_token_expiration=timedelta(days=1))
     await tick(hass)
     await tick(hass)
-    assert len(events) == 2, "a broken notify action stopped the event"
+    assert len(of(events, "long_lived_token")) == 2, "a broken notify action stopped the event"
     assert "could not send an alert through notify.gone" in caplog.text
 
 
-async def test_rules_switched_off_stay_silent(hass, child):
+async def test_a_0_2_form_that_turned_every_rule_off_keeps_them_off_but_not_new_ones(hass, child):
+    """0.2.0 stored the rules on; a rule added since is on (DESIGN.md 0.3.0, options)."""
     await setup(hass, rules=[])
+    user, _ = child
+    events = async_capture_events(hass, ANOMALY)
+    await outside_login(hass, user, token_type=TOKEN_TYPE_LONG_LIVED_ACCESS_TOKEN, client_name="a",
+                        access_token_expiration=timedelta(days=1))
+    await tick(hass)
+    assert [e.data["kind"] for e in events] == ["non_admin_internet"]
+
+
+async def test_rules_switched_off_stay_silent(hass, child):
+    from custom_components.access_guard.detector import RULES
+    await setup(hass, rules_off=list(RULES))
     user, _ = child
     events = async_capture_events(hass, ANOMALY)
     await outside_login(hass, user, token_type=TOKEN_TYPE_LONG_LIVED_ACCESS_TOKEN, client_name="a",
@@ -272,12 +289,29 @@ async def test_the_options_form_refuses_a_notify_action_that_is_not_one(hass):
     entry = await setup(hass)
     flow = await hass.config_entries.options.async_init(entry.entry_id)
     form = {"rules": ["long_lived_token"], "failures_before_login": 3.0, "sensitive_domains": ["lock"],
-            "persistent_notification": False}
+            "persistent_notification": False, "allowed_countries": ["cz"], "burst_failures": 20.0}
     res = await hass.config_entries.options.async_configure(flow["flow_id"], dict(form, notify_service="light.lamp"))
     assert res["errors"] == {"notify_service": "invalid_notify_service"}
     res = await hass.config_entries.options.async_configure(flow["flow_id"], dict(form, notify_service="notify.phone"))
     assert res["type"] == "create_entry"
     await hass.async_block_till_done()
     assert entry.options["failures_before_login"] == 3 and entry.options["notify_service"] == "notify.phone"
+    assert "rules" not in entry.options, "the rules off are stored, so a rule added later is on"
     det = entry.runtime_data.detector
     assert (det.rules, det.failures_before_login, det.sensitive) == ({"long_lived_token"}, 3, {"lock"})
+    assert (det.burst_failures, det.allowed_countries) == (20, {"CZ"})
+
+
+async def test_the_options_form_refuses_a_country_that_is_not_a_code(hass):
+    entry = await setup(hass)
+    flow = await hass.config_entries.options.async_init(entry.entry_id)
+    res = await hass.config_entries.options.async_configure(flow["flow_id"], {"allowed_countries": ["Czechia"]})
+    assert res["errors"] == {"allowed_countries": "invalid_country"}
+
+
+async def test_the_form_shows_a_0_2_entrys_rules_as_they_now_are(hass):
+    entry = await setup(hass, rules=["login_after_failures"])
+    flow = await hass.config_entries.options.async_init(entry.entry_id)
+    rules = next(k for k in flow["data_schema"].schema if k == "rules")
+    assert set(rules.default()) == {"login_after_failures", "non_admin_internet", "new_country",
+                                    "failed_login_burst"}

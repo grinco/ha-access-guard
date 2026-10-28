@@ -119,6 +119,19 @@ def a_ban_is_lifted_only_where_there_is_one():
     assert len(msgs) == 2 and msgs[0] == msgs[1], msgs
 
 
+@case
+def a_tap_needs_an_admin_with_a_live_app_login():
+    """Review S1: the phone's webhook outlives its login; a signed-out phone must not tap."""
+    app = U(client_id="https://home-assistant.io/android")
+    browser = U(client_id="https://home.example.org/")
+    admin = U(**dict(vars(ADMIN), refresh_tokens={"a": app}))
+    policy.check_tap(admin)
+    assert refused(policy.check_tap, U(**dict(vars(ADMIN), refresh_tokens={"b": browser})))
+    assert refused(policy.check_tap, U(**dict(vars(ADMIN), refresh_tokens={})))
+    assert refused(policy.check_tap, U(**dict(vars(CHILD), refresh_tokens={"a": app})))
+    assert refused(policy.check_tap, None)
+
+
 def main():
     bad = 0
     for fn in CASES:

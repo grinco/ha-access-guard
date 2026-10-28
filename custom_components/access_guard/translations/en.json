@@ -21,7 +21,10 @@
           "failures_before_login": "Failed attempts before a login that alerts",
           "sensitive_domains": "Sensitive domains",
           "persistent_notification": "Show alerts as notifications in Home Assistant",
-          "notify_service": "Also send alerts through (optional)"
+          "notify_service": "Also send alerts through (optional)",
+          "burst_failures": "Failed attempts that make a burst",
+          "allowed_countries": "Countries that never alert as new",
+          "actionable": "Offer \"Sign out this login\" on phone alerts"
         },
         "data_description": {
           "geo_path": "Download dbip-country-lite CSV from db-ip.com and put it here. Without it, no country is shown. Nothing is looked up online.",
@@ -30,13 +33,17 @@
           "failures_before_login": "A login from an address that failed this many times in the 15 minutes before it. 1 also catches a single mistyped password.",
           "sensitive_domains": "A new login from outside the home whose first move, within 5 minutes, is a live camera view or an action on one of these.",
           "persistent_notification": "Notifications are visible to every account, like the sessions sensor.",
-          "notify_service": "A notify action such as notify.mobile_app_pat_phone. A push leaves your instance through its provider (Google or Apple) carrying the person's name and address."
+          "notify_service": "A notify action such as notify.mobile_app_pat_phone. A push leaves your instance through its provider (Google or Apple) carrying the person's name, address and, with the button, the login's handle.",
+          "burst_failures": "Within 5 minutes, from one address, or from at least 3 addresses together.",
+          "allowed_countries": "Two-letter codes, such as CZ. A person's first country is learnt silently either way.",
+          "actionable": "Only with a mobile app notify action, and only for an alert about one exact login. The tap is checked like the sign-out action: the phone's person must be an administrator with a signed-in Home Assistant app."
         },
-        "description": "Every alert notifies only: Access Guard never signs anyone out by itself."
+        "description": "Alerts notify. The only sign-out is one an administrator taps on their own phone."
       }
     },
     "error": {
-      "invalid_notify_service": "Enter a notify action, such as notify.mobile_app_pat_phone."
+      "invalid_notify_service": "Enter a notify action, such as notify.mobile_app_pat_phone.",
+      "invalid_country": "Use two-letter country codes, such as CZ."
     }
   },
   "services": {
@@ -76,8 +83,17 @@
       "options": {
         "login_after_failures": "A login after failed attempts from its address",
         "sensitive_first": "A new outside login first watches a camera or opens a lock",
-        "long_lived_token": "A long-lived access token is created"
+        "long_lived_token": "A long-lived access token is created",
+        "non_admin_internet": "A person who is not an administrator signs in from the internet",
+        "new_country": "A person uses a login from a country new for them",
+        "failed_login_burst": "A burst of failed sign-in attempts"
       }
+    }
+  },
+  "issues": {
+    "admin_without_mfa": {
+      "title": "{name} signs in without multi-factor authentication",
+      "description": "{name} is an administrator and can change everything in Home Assistant, but signs in with a password alone. Ask them to open their profile, then *Multi-factor authentication*, and enable it. This issue goes away by itself once they have; you can also ignore it."
     }
   }
 }

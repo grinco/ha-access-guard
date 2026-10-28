@@ -54,13 +54,13 @@ def _record(msg, *args):
     return logging.LogRecord("homeassistant.components.http.ban", logging.WARNING, __file__, 1, msg, args, None)
 
 
-def test_the_handler_reports_each_address_and_counts_lines():
+def test_the_handler_reports_each_failure_once_with_its_addresses():
     got = []
-    h = FailedLogins(lambda ip, at: got.append((ip, at.tzinfo is not None)))
+    h = FailedLogins(lambda ips, at: got.append((ips, at.tzinfo is not None)))
     h.emit(_record(line()))
     h.emit(_record(line(host="x " + MARK % "192.168.1.5")))
     h.emit(_record(line().replace("/auth/login_flow/0d1e2f", "/api/")))
     h.emit(_record("Banned IP %s for too many login attempts", "203.0.113.9"))
     h.emit(_record("%d", "not a number"))      # a broken record is skipped, not raised
-    assert got == [("203.0.113.9", True), ("192.168.1.5", True), ("203.0.113.9", True)]
+    assert got == [(["203.0.113.9"], True), (["192.168.1.5", "203.0.113.9"], True)]
     assert (h.seen, h.ambiguous) == (2, 1)

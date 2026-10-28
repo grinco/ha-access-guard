@@ -12,6 +12,8 @@ import hashlib
 import ipaddress
 
 HANDLE_LEN = 12
+# The client ids of Home Assistant's own phone apps.
+APP_CLIENTS = frozenset({"https://home-assistant.io/iOS", "https://home-assistant.io/android"})
 
 
 class Refused(Exception):
@@ -61,3 +63,14 @@ def check_unban(caller, banned, ip):
     if addr not in banned:
         raise Refused("%s is not banned" % addr)
     return addr
+
+
+def check_tap(caller):
+    """`caller` tapped *Sign out this login* on a push (DESIGN.md 0.3.0, #6).
+
+    The phone's webhook outlives its login, so a phone signed out (lost, say) could still tap.
+    The person must still have a live login from a Home Assistant app.
+    """
+    check_caller(caller)
+    if not any(t.client_id in APP_CLIENTS for t in caller.refresh_tokens.values()):
+        raise Refused("%s has no signed-in Home Assistant app" % caller.name)

@@ -22,7 +22,8 @@ def rows(hass):
 
 async def tick(hass):
     async_fire_time_changed(hass, dt_util.utcnow() + SCAN_INTERVAL + timedelta(seconds=1))
-    await hass.async_block_till_done()
+    # The coordinator polls in a background task, which block_till_done does not wait for by default.
+    await hass.async_block_till_done(wait_background_tasks=True)
 
 
 async def test_sessions_are_listed_by_handle(hass, loaded, child):
