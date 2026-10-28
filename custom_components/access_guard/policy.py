@@ -9,6 +9,7 @@ is deliberately not offered (operator 2026-10-28); that stays in Settings -> Peo
 """
 
 import hashlib
+import ipaddress
 
 HANDLE_LEN = 12
 
@@ -43,3 +44,20 @@ def check_sign_out(caller, owner):
     check_caller(caller)
     if owner.system_generated:
         raise Refused("%s is a system account; add-ons sign in through it" % owner.name)
+
+
+def check_unban(caller, banned, ip):
+    """`caller` lifts the ban on `ip`; `banned` holds the banned addresses, None if bans are off.
+
+    Returns the address as Home Assistant keys it.
+    """
+    check_caller(caller)
+    if banned is None:
+        raise Refused("Home Assistant's IP bans are not enabled")
+    try:
+        addr = ipaddress.ip_address(ip)
+    except ValueError:
+        raise Refused("%s is not an IP address" % ip) from None
+    if addr not in banned:
+        raise Refused("%s is not banned" % addr)
+    return addr

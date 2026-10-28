@@ -11,3 +11,10 @@ sign_out_user:
       required: true
       selector:
         text:
+unban:
+  fields:
+    ip:
+      required: true
+      example: "203.0.113.9"
+      selector:
+        text:

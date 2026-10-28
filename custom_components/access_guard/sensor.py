@@ -1,4 +1,4 @@
-"""Two sensors: the logins (state = connected now) and the last actions people took."""
+"""Three sensors: the logins (state = connected now), the last actions people took, the IP bans."""
 
 from homeassistant.components.sensor import SensorDeviceClass, SensorEntity
 from homeassistant.const import EVENT_CALL_SERVICE
@@ -7,11 +7,10 @@ from homeassistant.helpers.restore_state import RestoreEntity
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from homeassistant.util import dt as dt_util
 
-from .const import ACTIVITY_LEN, MAX_ROWS
+from .const import ACTIVITY_LEN, MAX_ROWS, NOT_A_PERSON
+from .sessions import action_target
 
 ROW_KEYS = {"t", "who", "action", "target"}
-# Actions a browser or app runs by itself under its user, not something the person did.
-NOT_A_PERSON = {("system_log", "write")}
 
 
 def _well_formed(row):
@@ -22,7 +21,7 @@ def _well_formed(row):
 
 async def async_setup_entry(hass, entry, async_add_entities):
     coord = entry.runtime_data
-    async_add_entities([SessionsSensor(coord, entry), ActivitySensor(coord, entry)])
+    async_add_entities([SessionsSensor(coord, entry), ActivitySensor(coord, entry), BansSensor(coord, entry)])
 
 
 class SessionsSensor(CoordinatorEntity, SensorEntity):
@@ -42,6 +41,27 @@ class SessionsSensor(CoordinatorEntity, SensorEntity):
     def extra_state_attributes(self):
         rows = self.coordinator.data["rows"]
         return {"count": len(rows), "sessions": rows[:MAX_ROWS]}
+
+
+class BansSensor(CoordinatorEntity, SensorEntity):
+    """Home Assistant's IP bans, newest first; unknown when bans are not enabled."""
+
+    _attr_name = "Access Guard bans"
+    _attr_icon = "mdi:shield-lock"
+    _attr_native_unit_of_measurement = "addresses"
+
+    def __init__(self, coord, entry):
+        super().__init__(coord)
+        self._attr_unique_id = f"{entry.entry_id}_bans"
+
+    @property
+    def native_value(self):
+        bans = self.coordinator.data["bans"]
+        return None if bans is None else len(bans)
+
+    @property
+    def extra_state_attributes(self):
+        return {"bans": (self.coordinator.data["bans"] or [])[:MAX_ROWS]}
 
 
 class ActivitySensor(RestoreEntity, SensorEntity):
@@ -70,15 +90,11 @@ class ActivitySensor(RestoreEntity, SensorEntity):
         uid = event.context.user_id
         if not uid or (event.data.get("domain"), event.data.get("service")) in NOT_A_PERSON:
             return
-        data = event.data.get("service_data") or {}
-        tgt = data.get("entity_id") or data.get("area_id") or data.get("device_id") or ""
-        if not isinstance(tgt, str):
-            tgt = ", ".join(tgt)
         names = (self._coord.data or {}).get("names", {})
         self._last = dt_util.utcnow()
         self._log = [{"t": self._last.isoformat(), "who": names.get(uid) or uid[:8],
                       "action": "%s.%s" % (event.data.get("domain"), event.data.get("service")),
-                      "target": tgt[:80]}] + self._log[:ACTIVITY_LEN - 1]
+                      "target": action_target(event.data.get("service_data"))}] + self._log[:ACTIVITY_LEN - 1]
         self.async_write_ha_state()
 
     @property

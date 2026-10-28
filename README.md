@@ -18,6 +18,9 @@ account and cannot lock you out.
 | `access_guard_login_removed` event | a login was removed; `removed_by` says whether Access Guard did it |
 | `access_guard.sign_out` | end one login, by its `handle` |
 | `access_guard.sign_out_user` | end all of one person's logins, by `user_id` |
+| `sensor.access_guard_bans` | state: addresses Home Assistant has banned. Attribute `bans`: `ip`, `banned_at`, `origin`, `country`, newest first |
+| `access_guard.unban` | lift one IP ban, by `ip`: removed from `ip_bans.yaml` and its failed-login count reset |
+| `access_guard_anomaly` event | an alert (below), with the login's fields plus `kind` and `message` |
 
 `origin` is `home` (your LAN), `tailscale`, `add-on`, `home via internet` (your own public
 address, e.g. through a tunnel), `internet`, `no address` or `never used`.
@@ -37,9 +40,31 @@ integration → Access Guard*. Requires Home Assistant 2026.10 or newer.
 - **Home public IP sensor** (optional): a sensor holding your public address, so logins
   from it read `home via internet`.
 
+## Alerts
+
+Each alert fires `access_guard_anomaly`, shows a notification in Home Assistant (option) and, if you
+set one, goes to a notify action such as `notify.mobile_app_pat_phone`. Alerts **only notify**:
+Access Guard never signs anyone out by itself.
+
+| Alert (`kind`) | When |
+|---|---|
+| `login_after_failures` | a login from an address that failed to sign in at least *N* times (option, default 1) in the 15 minutes before |
+| `sensitive_first` | a new login from outside the home whose first move, within 5 minutes, is a live camera view or an action on a sensitive domain (option: `camera`, `lock`, `alarm_control_panel` by default). `attribution` says whether the exact login (`login`) or only the person (`person`) is known |
+| `long_lived_token` | a long-lived access token was created |
+
+Good to know:
+- Failed logins are read from Home Assistant's own warning line. If you set
+  `homeassistant.components.http.ban` to `error` in `logger:`, Access Guard sees none. Diagnostics
+  show `failed_login_capture`.
+- With *N* = 1, one mistyped password before a login alerts too. Raise it if that is noisy.
+- Still camera pictures are fetched without a person's login, so only **live** views count. A
+  dashboard that opens with a live camera card counts as watching it.
+- A push to a phone leaves your instance through its provider (Google or Apple) with the person's
+  name and address. It is off unless you set a notify action.
+
 ## Security model
 
-- **Only administrators** can sign anyone out, and only as a signed-in person: an
+- **Only administrators** can sign anyone out or lift a ban, and only as a signed-in person: an
   automation or a script (no user) is refused. Any account can call an action through the
   API, so the integration checks the caller itself — hiding a button is not protection.
 - **System accounts are never touched** (the Supervisor's login is how add-ons connect).
@@ -78,8 +103,8 @@ filter:
 
 ## Roadmap
 
-Audit history, detection rules (new country, impossible travel per login, off-hours use)
-and automatic response with a dry-run mode — see [docs/DESIGN.md](docs/DESIGN.md).
+Audit history, more detection rules (new country, impossible travel per login, off-hours use, an
+administrator without MFA) and automatic response with a dry-run mode — see [docs/DESIGN.md](docs/DESIGN.md).
 
 ## Development
 

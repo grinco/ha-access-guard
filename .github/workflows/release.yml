@@ -22,6 +22,8 @@ jobs:
       - name: tests pass on the tagged commit
         run: |
           pip install -q pytest-homeassistant-custom-component==0.13.375
+          # The camera tests load Home Assistant's camera component; take its own requirements.
+          pip install -q $(python3 -c "import json, homeassistant.components.camera as c, os; print(' '.join(json.load(open(os.path.join(os.path.dirname(c.__file__), 'manifest.json')))['requirements']))")
           python3 tests/test_policy.py
           python3 -m pytest -q
       - name: publish the release

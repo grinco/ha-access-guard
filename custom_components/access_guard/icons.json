@@ -1,6 +1,13 @@
 {
   "services": {
-    "sign_out": {"service": "mdi:logout"},
-    "sign_out_user": {"service": "mdi:account-arrow-right"}
+    "sign_out": {
+      "service": "mdi:logout"
+    },
+    "sign_out_user": {
+      "service": "mdi:account-arrow-right"
+    },
+    "unban": {
+      "service": "mdi:shield-off"
+    }
   }
 }

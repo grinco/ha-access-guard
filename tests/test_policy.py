@@ -92,6 +92,33 @@ def a_handle_resolves_to_exactly_one_login():
     assert refused(policy.resolve, toks + [U(id="b" * 32)], policy.handle("b" * 32))
 
 
+@case
+def only_an_admin_lifts_a_ban():
+    import ipaddress
+    banned = {ipaddress.ip_address("203.0.113.9")}
+    assert refused(policy.check_unban, CHILD, banned, "203.0.113.9")
+    assert refused(policy.check_unban, None, banned, "203.0.113.9")
+    assert policy.check_unban(ADMIN, banned, "203.0.113.9") == ipaddress.ip_address("203.0.113.9")
+
+
+@case
+def a_ban_is_lifted_only_where_there_is_one():
+    import ipaddress
+    banned = {ipaddress.ip_address("2001:db8::9")}
+    assert policy.check_unban(ADMIN, banned, "2001:db8:0::9") in banned     # compared as an address
+    assert refused(policy.check_unban, ADMIN, banned, "203.0.113.9")
+    assert refused(policy.check_unban, ADMIN, banned, "not-an-ip")
+    assert refused(policy.check_unban, ADMIN, None, "2001:db8::9")         # bans are off
+    # The caller first: a non-admin learns nothing about which addresses are banned.
+    msgs = []
+    for ip in ("2001:db8::9", "203.0.113.9"):
+        try:
+            policy.check_unban(CHILD, banned, ip)
+        except policy.Refused as err:
+            msgs.append(str(err))
+    assert len(msgs) == 2 and msgs[0] == msgs[1], msgs
+
+
 def main():
     bad = 0
     for fn in CASES:
