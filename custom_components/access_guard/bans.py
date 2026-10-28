@@ -8,11 +8,14 @@ while Home Assistant may be appending to it.
 import logging
 import os
 
-from homeassistant.components.http.ban import ATTR_BANNED_AT, KEY_BAN_MANAGER, KEY_FAILED_LOGIN_ATTEMPTS
 from homeassistant.exceptions import HomeAssistantError
 from homeassistant.util import yaml as yaml_util
 
 _LOGGER = logging.getLogger(__name__)
+try:
+    from homeassistant.components.http.ban import ATTR_BANNED_AT, KEY_BAN_MANAGER, KEY_FAILED_LOGIN_ATTEMPTS
+except ImportError:  # internal: without it bans are off, and the rest of Access Guard still runs
+    KEY_BAN_MANAGER = None
 MAX_ROUNDS = 10
 
 
@@ -22,21 +25,28 @@ def _app(hass):
 
 def _manager(hass):
     app = _app(hass)
-    return app.get(KEY_BAN_MANAGER) if app is not None else None
+    return app.get(KEY_BAN_MANAGER) if app is not None and KEY_BAN_MANAGER is not None else None
 
 
 def banned(hass):
     """The banned addresses (ip_address -> IpBan), or None when bans are not loaded."""
-    m = _manager(hass)
-    return m.ip_bans_lookup if m is not None else None
+    lookup = getattr(_manager(hass), "ip_bans_lookup", None)
+    return lookup if isinstance(lookup, dict) else None
 
 
 def listing(hass):
-    """Plain rows, newest first; None when bans are not loaded."""
+    """Plain rows, newest first; None when bans are not loaded or not the shape expected.
+
+    It runs on every poll: a change in Home Assistant's ban manager must not take the
+    sessions sensor down with it.
+    """
     lookup = banned(hass)
     if lookup is None:
         return None
-    rows = [{"ip": str(b.ip_address), "banned_at": b.banned_at.isoformat()} for b in lookup.values()]
+    try:
+        rows = [{"ip": str(b.ip_address), "banned_at": b.banned_at.isoformat()} for b in lookup.values()]
+    except AttributeError:
+        return None
     return sorted(rows, key=lambda r: r["banned_at"], reverse=True)
 
 

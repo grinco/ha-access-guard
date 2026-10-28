@@ -142,3 +142,20 @@ async def test_diagnostics_count_bans_but_hold_no_address(hass, banned, loaded):
     diag = await async_get_config_entry_diagnostics(hass, loaded)
     assert diag["bans"] == 2
     assert "203.0.113.9" not in repr(diag) and "198.51.100.7" not in repr(diag)
+
+
+async def test_a_home_assistant_without_the_ban_internals_still_runs(hass, loaded, hass_admin_user, monkeypatch):
+    """A renamed internal turns bans off; sessions and sign-out keep working (upgrade safety)."""
+    monkeypatch.setattr(bans, "KEY_BAN_MANAGER", None)
+    await loaded.runtime_data.async_refresh()
+    assert hass.states.get(BANS).state == "unknown"
+    assert hass.states.get("sensor.access_guard_sessions").state not in ("unknown", "unavailable")
+    with pytest.raises(HomeAssistantError, match="not enabled"):
+        await unban(hass, "203.0.113.9", hass_admin_user)
+
+
+async def test_a_ban_manager_of_another_shape_never_breaks_the_poll(hass, banned, loaded, monkeypatch):
+    monkeypatch.setattr(banned, "ip_bans_lookup", {ATTACKER: object()})
+    await loaded.runtime_data.async_refresh()
+    assert loaded.runtime_data.last_update_success
+    assert hass.states.get(BANS).state == "unknown"
