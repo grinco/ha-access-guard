@@ -1,0 +1,32 @@
+name: CI
+on:
+  push:
+  pull_request:
+
+jobs:
+  hassfest:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: home-assistant/actions/hassfest@master
+
+  hacs:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: hacs/action@main
+        with:
+          category: integration
+
+  tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.14"
+      # Pinned to the Home Assistant release it was verified against (2026.10.4).
+      - run: pip install -q pytest-homeassistant-custom-component==0.13.375
+      - name: policy (plain Python, no Home Assistant)
+        run: python3 tests/test_policy.py
+      - name: integration against Home Assistant
+        run: python3 -m pytest -q

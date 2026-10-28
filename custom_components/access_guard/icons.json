@@ -1,0 +1,6 @@
+{
+  "services": {
+    "sign_out": {"service": "mdi:logout"},
+    "sign_out_user": {"service": "mdi:account-arrow-right"}
+  }
+}

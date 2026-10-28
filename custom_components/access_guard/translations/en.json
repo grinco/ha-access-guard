@@ -1,0 +1,44 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Access Guard",
+        "description": "Shows who is signed in to Home Assistant and from where, and lets an administrator sign out a single session."
+      }
+    },
+    "abort": {
+      "single_instance_allowed": "Access Guard is already set up."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Access Guard options",
+        "data": {
+          "geo_path": "Country database (DB-IP Lite CSV, optional)",
+          "home_wan_entity": "Sensor holding the home's public IP (optional)"
+        },
+        "data_description": {
+          "geo_path": "Download dbip-country-lite CSV from db-ip.com and put it here. Without it, no country is shown. Nothing is looked up online.",
+          "home_wan_entity": "Logins from this address are labelled 'home via internet' instead of 'internet'."
+        }
+      }
+    }
+  },
+  "services": {
+    "sign_out": {
+      "name": "Sign out a session",
+      "description": "Ends one login (one app or browser) at once. The account stays active and its person can sign in again. Administrators only.",
+      "fields": {
+        "handle": {"name": "Handle", "description": "The 12-character handle of the login, from the sessions sensor."}
+      }
+    },
+    "sign_out_user": {
+      "name": "Sign out all of a person's sessions",
+      "description": "Ends every login of one person. The account stays active and they can sign in again. Administrators only.",
+      "fields": {
+        "user_id": {"name": "User ID", "description": "The person's user id, from the sessions sensor."}
+      }
+    }
+  }
+}

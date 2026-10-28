@@ -1,0 +1,13 @@
+sign_out:
+  fields:
+    handle:
+      required: true
+      example: "3f9a1c0b7d2e"
+      selector:
+        text:
+sign_out_user:
+  fields:
+    user_id:
+      required: true
+      selector:
+        text:
