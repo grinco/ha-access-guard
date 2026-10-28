@@ -45,6 +45,7 @@ again. Disabling an account is not offered; that stays in Settings → People.
 
 | `unban(ip)` — lift one IP ban (0.2.0) | the caller is a signed-in **administrator** | no caller; an address that is not banned; Home Assistant's bans not loaded |
 | light detection rules (0.2.0) | always: they **notify only** | any action at all; signing out is phase 4 |
+| *Sign out this login* tapped on a push (0.3.0) | the phone's registered person is a signed-in **administrator**, as for `sign_out` | a finding from failed logins (`login_after_failures`, `failed_login_burst`); a `sensitive_first` finding attributed to a `person` only; the refusals of `sign_out` |
 
 An administrator may sign out their own other devices, or the owner's: it is a session,
 and they sign in again.
@@ -299,11 +300,178 @@ sessions sensor's addresses. Diagnostics carry only their count, never an addres
    ban covers it only when a threshold is configured.
 5. **Actionable push "Sign out this login"**: the handle is already in the anomaly event. It is phase 4.
 
+## 0.3.0 — the 0.2.0 follow-ups, issues #2–#6 (low-level design)
+
+Status: 2026-10-28; companion review 2026-10-28 (review-20261028-8456) folded in as S1–S7. Each part closes one issue; all of them keep
+0.2.0's rules: notify only, except a sign-out an administrator taps on their own phone; bounded memory;
+no credential and no address in diagnostics.
+
+### #2 — Repairs issue: an administrator without MFA (`mfa.py`)
+
+On each poll, for every **active, non-system administrator**,
+`hass.auth.async_get_enabled_mfa(user)` (verified 2026.10.4: it asks each MFA module
+`async_is_user_setup`). The result decides the repairs issue:
+
+- No module enabled: a repairs issue `admin_without_mfa_<user id>` (warning, not fixable from the
+  dialog) names the person and says how: *Profile → Multi-factor authentication*.
+- Module enabled, or no longer an administrator, or the account removed or disabled: the issue is
+  deleted. Access Guard keeps the set it raised and deletes what is no longer true, so nothing
+  lingers.
+- If Home Assistant has **no MFA module configured**, nobody can enable one. Then no issue is raised
+  (it would be unfixable noise), and diagnostics say `mfa_modules: 0`.
+- Repairs are shown to administrators only. The user id in the issue id is not a secret; the name is
+  a placeholder. Ignoring an issue in the repairs dialog is Home Assistant's own, persisted choice.
+
+Pure part (`mfa.admins_without_mfa(users, enabled)`) tested without Home Assistant; the issue
+registry part against the real one.
+
+### #3 — Rule `non_admin_internet`
+
+On `new_login`: a login of a person who is **not an administrator** with origin `internet`. One alert,
+notify only. The coordinator passes `is_admin` (from `hass.auth`) to `Detector.new_login`; the event
+contract gains no field.
+
+Behind a reverse proxy without `use_x_forwarded_for`, every login shows the proxy's address. That
+address is on the LAN, so its origin is `home` and the rule stays silent: a misconfigured proxy gives a
+missed alert, never a flood. The README says so. A per-person exemption is left for a later issue.
+
+### #4 — Rule `new_country`
+
+A person signs in, **or keeps using a login**, from a country never seen for them (by the country
+file). It covers a stolen token used abroad, not only new logins.
+
+- `Detector.countries`: user id → set of country codes. Kept in a `Store`
+  (`access_guard.countries`, version 1) so it survives restarts. It holds only user ids and country
+  codes, never an address. It is saved with `async_delay_save` (30 s) when it changes, and pruned of
+  users that no longer exist.
+- On every poll, each row with a country is checked. A person with **no** countries yet learns the
+  row's country silently: the first is the baseline. A country not yet in their set alerts once with
+  that login's handle and is learnt.
+- At the first poll after install or upgrade, every current row is learnt without alerting. An
+  upgrade does not flood.
+- Option `allowed_countries` (ISO codes): never alert for them.
+- Bounded: at most 32 countries per person. A 33rd alerts, is learnt, and the country learnt longest
+  ago is forgotten. (The draft said "alerts and is not stored". That would have alerted again on every
+  30-s poll; found in review S3.)
+- Without the country file the rule is inert; diagnostics already show `geo_file_present`.
+- No special first poll is needed: a person without a baseline learns silently, and after install or
+  upgrade nobody has one. The Store is **loaded before the first poll**, so a restart cannot be
+  mistaken for an empty Store (S3). A Home Assistant user id is never reused, so pruning a deleted
+  user cannot hand their set to someone else.
+- **Which login (S2, checked and refuted):** each row's country comes from that login's own last
+  address. The finding therefore names exactly the login seen in the new country, never a person's
+  other login. Two logins of one person in the same new country in one poll: the first alerts, and the
+  country is then known.
+
+### #5 — Rule `failed_login_burst`
+
+Uses 0.2.0's failed-login capture. `FailedLogins` now hands the detector **one failure with its
+candidate addresses** (`failure(ips, at)`). A line naming several addresses is then one failure
+across addresses, not several.
+
+- **Per address:** at least *B* failures from one address within 5 minutes (option, default 10).
+- **Across addresses:** at least *B* failures within 5 minutes coming from at least 3 different
+  addresses (password spraying from many places). Failure events are kept in a deque bounded at
+  1,024.
+- **One alert per burst:** after alerting, an address (or the across-addresses rule) stays quiet for
+  one hour. The cool-down map is bounded like the others.
+- The finding carries `failures`, `addresses` (a count) and `ip` (the address, or `None` across
+  addresses). Its login fields are `None`, since there is no login. Notify only, and never a
+  sign-out button: usernames are not secret.
+
+**Counting (S4).** A line naming several addresses is one failure event. It adds 1 to *each* of its
+addresses (as in 0.2.0, so the real one cannot be hidden) and one event to the deque.
+- The across-addresses spread counts the distinct addresses of the events in the window. A forged
+  PTR can therefore make one attacker look like three addresses. The cost is one extra notification
+  beside the per-address one. The alternative, ignoring ambiguous lines, would let a forger hide a
+  spray.
+- The 1,024-event bound cannot hide a burst: evicting needs more than 1,024 failures in 5 minutes,
+  which is itself a burst.
+- The across-addresses rule has one cool-down: a sustained spray alerts once an hour.
+
+### #6 — Actionable push: *Sign out this login*
+
+When the notify action is a mobile app (`notify.mobile_app_*`), the push carries
+`data.actions = [{"action": "ACCESS_GUARD_SIGN_OUT_<handle>", "title": "Sign out this login"}]`. Other
+notify platforms get no `data`: some validate it and would refuse the push.
+
+The button is offered only for a finding about **one exact login**:
+- `long_lived_token`, `non_admin_internet`, `new_country`;
+- `sensitive_first` with `attribution: login`.
+
+It is never offered for failed-login findings (`login_after_failures`, `failed_login_burst`): an
+attacker can make those name a household member's login, as the policy table says. It is never
+offered for `attribution: person` either (review R3).
+
+The tap: the app fires `mobile_app_notification_action` through its webhook. Its context is
+`Context(user_id=<the phone's registered person>)` (verified 2026.10.4, `registration_context`).
+
+**Who can fire it (S1, the blocking finding).** The webhook is authenticated by the registration's
+secret webhook id (or its cloudhook), not by a login. A phone keeps it after its login is signed out:
+a lost phone whose session the administrator ended could still tap. Home Assistant's registration
+stores no token id, so a tap cannot be tied to that phone's own login. Access Guard therefore also
+requires that **the tapping person still has a live login from a Home Assistant app** (an `iOS
+app` or `Android app` client). Signing out all of a person's app logins (`sign_out_user`, or one by one)
+therefore disarms their phones' buttons. A phone of theirs that is still signed in keeps working.
+That is the remaining limit, stated here and in the README.
+Access Guard listens for actions that start `ACCESS_GUARD_SIGN_OUT_`, takes the 12-hex handle, and runs
+**the same code path as `access_guard.sign_out`**, with the event's user as the caller:
+- `policy.check_caller`, `resolve`, `check_sign_out`: a non-admin's phone, an automation (no user), a
+  system login and an unknown or ambiguous handle are all refused;
+- the same log line and `removed_by` attribution.
+
+The push's action string carries the login's handle to Google or Apple. A handle is not a
+credential (principle 1), but it is household data. Like the message it rides with, it leaves the
+house only when the operator sets a notify action (principle 5, S7).
+
+The result goes back through the same notify action: *Signed out Robin's Android app.* or
+*Could not sign out: <reason>.* A malformed action is ignored. Option `actionable` (default on) turns
+the button off. Anyone who can fire that event as an administrator could already call
+`access_guard.sign_out`, so the tap adds no power.
+
+**Dry-run** (named in #6) belongs to *automatic* response, which this is not: every sign-out here is
+tapped by an administrator. It stays in phase 4.
+
+### Options and upgrade
+
+The 0.2.0 options store `rules` as the list of rules **on**. A user who saved the form would then get
+none of the new rules. 0.3.0 stores `rules_off` instead. Whenever options are read, a `rules` without
+`rules_off` is read as "the 0.2.0 rules not listed are off", and every rule added since is on.
+- This replaces a one-off config-entry migration (S5). A migration would run once, so a downgrade, a
+  save in 0.2.0's form (which writes `rules` and drops `rules_off`) and a re-upgrade would lose the
+  choice. Reading it every time handles every path and needs no version bump.
+- A downgrade to 0.2.0 ignores `rules_off`, so all of 0.2.0's rules come back on: safe.
+- The countries Store is ignored by 0.2.0 and kept, so a re-upgrade keeps the baselines.
+
+New options: `burst_failures` (default 10), `allowed_countries` (none), `actionable` (on). Migrated
+users get these defaults too. `actionable: on` changes their existing pushes: a mobile push gains the
+button. The release notes say so (S5).
+Diagnostics add only counts: `mfa_modules`, `admins_without_mfa`, `countries_known` (people with a
+baseline), `bursts_alerted`.
+
+### Tests (first, as before)
+
+- `mfa.admins_without_mfa`, the detector's three new rules (thresholds, windows, cool-downs,
+  baseline, allow-list, bounds), and which findings get a button: pure, plus mutation-checked.
+- Against Home Assistant:
+  - repairs raised and cleared with real TOTP setup;
+  - no issue without MFA modules;
+  - the countries `Store` survives a reload;
+  - a 0.2.0 entry's `rules` read as `rules_off`;
+  - a tapped action (with the phone's context) signs out exactly that login. Refused: a non-admin's
+    tap, an automation's, a failed-login finding's handle, and an administrator whose app logins are
+    all gone (S1);
+  - a non-mobile notify action gets no `data`;
+  - planted secrets in the new findings;
+  - diagnostics stay counts only.
+- End to end in the Home Assistant container: upgrade 0.2.0 → 0.3.0 in place.
+
 ## Phases
 
 | Phase | Delivers | Replaces in the operator's instance |
 |---|---|---|
 | **1 — Visibility + control** | config flow; sessions + activity sensors; new-login / removed events; `sign_out`, `sign_out_user`; offline country from an operator-supplied file; diagnostics (allowlist); HACS packaging; minimum HA 2026.10 | `command_line` sensor, `ha_sessions.py`, the activity template sensor, the creation-time template condition |
+| **0.3.0 — Follow-ups #2–#6** | MFA repairs issue; `non_admin_internet`, `new_country`, `failed_login_burst`; *Sign out this login* on a phone alert | — |
 | **0.2.0 — Light detection + bans** | see above: failed-login capture (in memory), three notify-only rules, alerts, bans sensor and `unban` | the operator's "login after a failure" automation, hand edits of `ip_bans.yaml` |
 | **2 — Audit** | AuditLog store; per-login address history; failed-login history kept across restarts; repairs issue for an owner account without MFA | — |
 | **3 — Detection** | `access_guard_anomaly`; rules, each an option: new country for a login's user; a non-admin's login used from the internet (needs `use_x_forwarded_for` behind a proxy, else every address is the proxy's); use outside allowed hours; impossible travel **per login**, with a minimum distance and time and an allow-list (one person's phone and laptop are two logins in two places); long-lived token created; burst of failed logins (only if phase-2 capture works; a repairs issue says when it does not) | — |
