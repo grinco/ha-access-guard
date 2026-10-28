@@ -206,3 +206,18 @@ async def test_activity_skips_the_frontend_reporting_its_own_errors(hass, loaded
                                    context=Context(user_id=user.id))
     await hass.async_block_till_done()
     assert [r["action"] for r in hass.states.get(ACTIVITY).attributes["log"]] == ["light.turn_on"]
+
+
+async def test_an_entry_from_0_1_loads_and_its_options_form_opens(hass, child):
+    """Upgrade safety: 0.1.x options only had the country file and the WAN sensor."""
+    from pytest_homeassistant_custom_component.common import MockConfigEntry
+    entry = MockConfigEntry(domain=DOMAIN, title="Access Guard", data={},
+                            options={"geo_path": "/config/access_guard/x.csv.gz", "home_wan_entity": "sensor.wan"})
+    entry.add_to_hass(hass)
+    assert await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
+    assert hass.states.get(SESSIONS).state == "0" and rows(hass)
+    flow = await hass.config_entries.options.async_init(entry.entry_id)
+    assert flow["type"] == "form" and not flow["errors"]
+    det = entry.runtime_data.detector
+    assert det.failures_before_login == 1 and "sensitive_first" in det.rules
