@@ -2,6 +2,11 @@ name: CI
 on:
   push:
   pull_request:
+  # Weekly against the newest Home Assistant: the integration uses its internal auth
+  # API (hass.auth), so a breaking change should show up here before anyone upgrades.
+  schedule:
+    - cron: "17 5 * * 1"
+  workflow_dispatch:
 
 jobs:
   hassfest:
@@ -16,18 +21,27 @@ jobs:
       - uses: hacs/action@main
         with:
           category: integration
-          # Brand assets are needed only for the default HACS store, not a custom repository.
-          ignore: brands
 
   tests:
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # pinned: the release it was verified against; latest: whatever Home Assistant ships now
+        ha: [pinned, latest]
     steps:
       - uses: actions/checkout@v5
       - uses: actions/setup-python@v6
         with:
           python-version: "3.14"
-      # Pinned to the Home Assistant release it was verified against (2026.10.4).
-      - run: pip install -q pytest-homeassistant-custom-component==0.13.375
+      - name: install Home Assistant test harness (${{ matrix.ha }})
+        run: |
+          if [ "${{ matrix.ha }}" = pinned ]; then
+            pip install -q pytest-homeassistant-custom-component==0.13.375   # Home Assistant 2026.10.4
+          else
+            pip install -q --upgrade pytest-homeassistant-custom-component
+          fi
+          python3 -c "import homeassistant.const as c; print('Home Assistant', c.__version__)" 
       - name: policy (plain Python, no Home Assistant)
         run: python3 tests/test_policy.py
       - name: integration against Home Assistant

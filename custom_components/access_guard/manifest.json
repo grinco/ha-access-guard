@@ -1,7 +1,9 @@
 {
   "domain": "access_guard",
   "name": "Access Guard",
-  "codeowners": ["@grinco"],
+  "codeowners": [
+    "@grinco"
+  ],
   "config_flow": true,
   "dependencies": [],
   "documentation": "https://github.com/grinco/ha-access-guard",
@@ -10,5 +12,5 @@
   "issue_tracker": "https://github.com/grinco/ha-access-guard/issues",
   "requirements": [],
   "single_config_entry": true,
-  "version": "0.1.0"
+  "version": "0.1.1"
 }

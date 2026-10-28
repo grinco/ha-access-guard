@@ -192,3 +192,17 @@ async def test_restored_activity_keeps_only_well_formed_rows(hass, child):
     await hass.config_entries.async_setup(entry.entry_id)
     await hass.async_block_till_done()
     assert hass.states.get(ACTIVITY).attributes["log"] == [good]
+
+
+async def test_activity_skips_the_frontend_reporting_its_own_errors(hass, loaded, child):
+    """Seen live 2026-10-28: an open browser calls system_log.write under its user whenever a
+    script errors, which is not something the person did."""
+    user, _ = child
+    hass.services.async_register("system_log", "write", lambda call: None)
+    hass.services.async_register("light", "turn_on", lambda call: None)
+    await hass.services.async_call("system_log", "write", {"message": "x"}, blocking=True,
+                                   context=Context(user_id=user.id))
+    await hass.services.async_call("light", "turn_on", {"entity_id": "light.lamp"}, blocking=True,
+                                   context=Context(user_id=user.id))
+    await hass.async_block_till_done()
+    assert [r["action"] for r in hass.states.get(ACTIVITY).attributes["log"]] == ["light.turn_on"]

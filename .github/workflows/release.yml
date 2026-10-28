@@ -1,0 +1,30 @@
+name: Release
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - name: the tag matches the manifest version
+        run: |
+          want="${GITHUB_REF_NAME#v}"
+          have=$(python3 -c "import json; print(json.load(open('custom_components/access_guard/manifest.json'))['version'])")
+          [ "$want" = "$have" ] || { echo "::error::tag $GITHUB_REF_NAME but manifest.json says $have"; exit 1; }
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.14"
+      - name: tests pass on the tagged commit
+        run: |
+          pip install -q pytest-homeassistant-custom-component==0.13.375
+          python3 tests/test_policy.py
+          python3 -m pytest -q
+      - name: publish the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "$GITHUB_REF_NAME" --title "$GITHUB_REF_NAME" --generate-notes --verify-tag

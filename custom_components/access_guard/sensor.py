@@ -10,6 +10,8 @@ from homeassistant.util import dt as dt_util
 from .const import ACTIVITY_LEN, MAX_ROWS
 
 ROW_KEYS = {"t", "who", "action", "target"}
+# Actions a browser or app runs by itself under its user, not something the person did.
+NOT_A_PERSON = {("system_log", "write")}
 
 
 def _well_formed(row):
@@ -66,7 +68,7 @@ class ActivitySensor(RestoreEntity, SensorEntity):
     @callback
     def _on_call(self, event: Event):
         uid = event.context.user_id
-        if not uid:
+        if not uid or (event.data.get("domain"), event.data.get("service")) in NOT_A_PERSON:
             return
         data = event.data.get("service_data") or {}
         tgt = data.get("entity_id") or data.get("area_id") or data.get("device_id") or ""
