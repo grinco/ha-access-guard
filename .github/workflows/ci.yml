@@ -41,8 +41,9 @@ jobs:
           else
             pip install -q --upgrade pytest-homeassistant-custom-component
           fi
-          # The camera tests load Home Assistant's camera component; take its own requirements.
-          pip install -q $(python3 -c "import json, homeassistant.components.camera as c, os; print(' '.join(json.load(open(os.path.join(os.path.dirname(c.__file__), 'manifest.json')))['requirements']))")
+          # The camera tests load Home Assistant's camera component; take its own requirements
+          # from its manifest (importing camera would already need them).
+          pip install -q $(python3 -c "import json, os, homeassistant as h; print(' '.join(json.load(open(os.path.join(os.path.dirname(h.__file__), 'components', 'camera', 'manifest.json')))['requirements']))")
           python3 -c "import homeassistant.const as c; print('Home Assistant', c.__version__)"
       - name: policy (plain Python, no Home Assistant)
         run: python3 tests/test_policy.py
