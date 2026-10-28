@@ -1,7 +1,7 @@
 """Access Guard: who is signed in to Home Assistant, from where, and ending a session.
 
-Phase 1 of docs/DESIGN.md. Every action checks its caller in policy.py: any account can
-call an action through the API, not only from a dashboard that shows the button.
+Phase 1 and 0.2.0 of docs/DESIGN.md. Every action checks its caller in policy.py: any account
+can call an action through the API, not only from a dashboard that shows the button.
 """
 
 import logging
@@ -13,8 +13,8 @@ from homeassistant.core import HomeAssistant, ServiceCall
 from homeassistant.exceptions import ServiceValidationError
 from homeassistant.helpers import config_validation as cv
 
-from . import policy
-from .const import DOMAIN, SERVICE_SIGN_OUT, SERVICE_SIGN_OUT_USER
+from . import bans, policy
+from .const import DOMAIN, EVENT_UNBANNED, SERVICE_SIGN_OUT, SERVICE_SIGN_OUT_USER, SERVICE_UNBAN
 from .coordinator import AccessGuardCoordinator
 
 _LOGGER = logging.getLogger(__name__)
@@ -31,6 +31,10 @@ async def async_setup(hass: HomeAssistant, config) -> bool:
         coord = hass.data.get(DOMAIN)
         if coord is None:
             raise ServiceValidationError("Access Guard is not set up")
+        return coord
+
+    def session_ender() -> AccessGuardCoordinator:
+        coord = coordinator()
         if not hasattr(hass.auth, "async_remove_refresh_token"):
             # An internal API: refuse rather than silently do nothing (DESIGN.md).
             raise ServiceValidationError("this Home Assistant version cannot end sessions")
@@ -47,7 +51,7 @@ async def async_setup(hass: HomeAssistant, config) -> bool:
         await coord.async_refresh()
 
     async def sign_out(call: ServiceCall) -> None:
-        coord = coordinator()
+        coord = session_ender()
         who = await caller(call)
         tokens = [t for u in await hass.auth.async_get_users() for t in u.refresh_tokens.values()]
         try:
@@ -59,7 +63,7 @@ async def async_setup(hass: HomeAssistant, config) -> bool:
         await remove(coord, who, [token])
 
     async def sign_out_user(call: ServiceCall) -> None:
-        coord = coordinator()
+        coord = session_ender()
         who = await caller(call)
         try:
             policy.check_caller(who)
@@ -75,10 +79,23 @@ async def async_setup(hass: HomeAssistant, config) -> bool:
         # Sessions only: the account stays active and its person signs in again.
         await remove(coord, who, list(target.refresh_tokens.values()))
 
+    async def unban(call: ServiceCall) -> None:
+        coord = coordinator()
+        who = await caller(call)
+        try:
+            addr = policy.check_unban(who, bans.banned(hass), call.data["ip"])
+        except policy.Refused as err:
+            raise ServiceValidationError(str(err)) from err
+        await bans.async_unban(hass, addr)
+        _LOGGER.info("%s (%s) lifted the ban on %s", who.name, who.id, addr)
+        hass.bus.async_fire(EVENT_UNBANNED, {"ip": str(addr), "by_user_id": who.id})
+        await coord.async_refresh()
+
     hass.services.async_register(DOMAIN, SERVICE_SIGN_OUT, sign_out,
                                  schema=vol.Schema({vol.Required("handle"): vol.All(cv.string, vol.Length(12, 12))}))
     hass.services.async_register(DOMAIN, SERVICE_SIGN_OUT_USER, sign_out_user,
                                  schema=vol.Schema({vol.Required("user_id"): cv.string}))
+    hass.services.async_register(DOMAIN, SERVICE_UNBAN, unban, schema=vol.Schema({vol.Required("ip"): cv.string}))
     return True
 
 
@@ -87,6 +104,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     await coord.async_config_entry_first_refresh()
     entry.runtime_data = coord
     hass.data[DOMAIN] = coord
+    coord.async_watch()
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
     entry.async_on_unload(entry.add_update_listener(_reload))
     return True

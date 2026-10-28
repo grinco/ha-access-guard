@@ -28,6 +28,13 @@ def event_data(row):
     return data
 
 
+def action_target(service_data):
+    """What an action ran on, for a person's activity: entities, else an area or a device."""
+    data = service_data or {}
+    tgt = data.get("entity_id") or data.get("area_id") or data.get("device_id") or ""
+    return (tgt if isinstance(tgt, str) else ", ".join(tgt))[:80]
+
+
 def client(token_type, client_id, client_name):
     if token_type == "long_lived_access_token":
         return "token: %s" % (client_name or "unnamed")
@@ -143,11 +150,15 @@ def snapshot(users):
     return out
 
 
-def finish(rows, now, active_window, wan=None, geo=None):
-    """Origin, country and 'connected now' for each row; most recent use first."""
-    for r in rows:
-        r["origin"] = origin(r["ip"], wan, r["last_used"])
+def finish(rows, now, active_window, wan=None, geo=None, bans=None):
+    """Origin, country and 'connected now' for each row; most recent use first.
+
+    `bans` rows get origin and country too, in the same executor job (the country file is blocking).
+    """
+    for r in rows + (bans or []):
+        r["origin"] = origin(r["ip"], wan, r.get("last_used"))
         r["country"] = geo.country(r["ip"]) if geo and r["origin"] in ("internet", "home via internet") else None
+    for r in rows:
         used = datetime.fromisoformat(r["last_used"]) if r["last_used"] else None
         r["active"] = bool(used) and now - used <= active_window
     never = "0000"

@@ -19,3 +19,16 @@ DEFAULT_GEO_FILE = "dbip-country-lite.csv.gz"
 
 SERVICE_SIGN_OUT = "sign_out"
 SERVICE_SIGN_OUT_USER = "sign_out_user"
+SERVICE_UNBAN = "unban"
+
+EVENT_ANOMALY = f"{DOMAIN}_anomaly"
+EVENT_UNBANNED = f"{DOMAIN}_unbanned"
+
+CONF_RULES = "rules"
+CONF_FAILURES_BEFORE_LOGIN = "failures_before_login"
+CONF_SENSITIVE_DOMAINS = "sensitive_domains"
+CONF_PERSISTENT_NOTIFICATION = "persistent_notification"
+CONF_NOTIFY_SERVICE = "notify_service"
+
+# Actions a browser or app runs by itself under its user, not something the person did.
+NOT_A_PERSON = {("system_log", "write")}
