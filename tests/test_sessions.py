@@ -29,6 +29,12 @@ def test_wan_is_compared_as_an_address():
     assert origin("2001:db8::1", wan="unavailable") == "internet"
 
 
+def test_the_apps_shown_are_the_apps_the_policy_trusts():
+    from custom_components.access_guard.policy import APP_CLIENTS
+    from custom_components.access_guard.sessions import APPS
+    assert set(APPS) == APP_CLIENTS
+
+
 def test_clients():
     assert client("normal", "https://home-assistant.io/iOS", None) == "iOS app"
     assert client("normal", "https://home.example.org/", None) == "browser: home.example.org"

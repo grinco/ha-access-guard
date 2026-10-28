@@ -24,7 +24,11 @@ SERVICE_UNBAN = "unban"
 EVENT_ANOMALY = f"{DOMAIN}_anomaly"
 EVENT_UNBANNED = f"{DOMAIN}_unbanned"
 
-CONF_RULES = "rules"
+CONF_RULES = "rules"              # 0.2.0: the rules on; read only to derive CONF_RULES_OFF
+CONF_RULES_OFF = "rules_off"
+CONF_BURST_FAILURES = "burst_failures"
+CONF_ALLOWED_COUNTRIES = "allowed_countries"
+CONF_ACTIONABLE = "actionable"
 CONF_FAILURES_BEFORE_LOGIN = "failures_before_login"
 CONF_SENSITIVE_DOMAINS = "sensitive_domains"
 CONF_PERSISTENT_NOTIFICATION = "persistent_notification"

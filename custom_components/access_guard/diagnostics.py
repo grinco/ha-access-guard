@@ -6,12 +6,14 @@ Never an IP address, a name, a user id or a handle.
 import logging
 from collections import Counter
 
-from .const import (CONF_FAILURES_BEFORE_LOGIN, CONF_GEO_PATH, CONF_HOME_WAN_ENTITY, CONF_NOTIFY_SERVICE,
-                    CONF_PERSISTENT_NOTIFICATION, CONF_RULES, CONF_SENSITIVE_DOMAINS)
+from .const import (CONF_ACTIONABLE, CONF_ALLOWED_COUNTRIES, CONF_BURST_FAILURES, CONF_FAILURES_BEFORE_LOGIN,
+                    CONF_GEO_PATH, CONF_HOME_WAN_ENTITY, CONF_NOTIFY_SERVICE, CONF_PERSISTENT_NOTIFICATION, CONF_RULES,
+                    CONF_RULES_OFF, CONF_SENSITIVE_DOMAINS)
 from .failures import LOGGER_NAME
 
-OPTIONS = (CONF_GEO_PATH, CONF_HOME_WAN_ENTITY, CONF_RULES, CONF_FAILURES_BEFORE_LOGIN, CONF_SENSITIVE_DOMAINS,
-           CONF_PERSISTENT_NOTIFICATION, CONF_NOTIFY_SERVICE)
+OPTIONS = (CONF_GEO_PATH, CONF_HOME_WAN_ENTITY, CONF_RULES, CONF_RULES_OFF, CONF_FAILURES_BEFORE_LOGIN,
+           CONF_SENSITIVE_DOMAINS, CONF_BURST_FAILURES, CONF_ALLOWED_COUNTRIES, CONF_PERSISTENT_NOTIFICATION,
+           CONF_NOTIFY_SERVICE, CONF_ACTIONABLE)
 
 
 async def async_get_config_entry_diagnostics(hass, entry):
@@ -33,4 +35,8 @@ async def async_get_config_entry_diagnostics(hass, entry):
         "failed_logins_seen": coord.failed_logins.seen,
         "failed_logins_ambiguous": coord.failed_logins.ambiguous,
         "camera_watch": coord.cameras.watching(),
+        "mfa_modules": coord.mfa.modules,
+        "admins_without_mfa": coord.mfa.count(),
+        "countries_known": len(coord.detector.countries),     # people with a baseline: a count, no id
+        "bursts_alerted": coord.detector.bursts_alerted,
     }

@@ -43,7 +43,7 @@ def addresses(message):
 
 
 class FailedLogins(logging.Handler):
-    """Calls `on_failure(ip, at)` for each failed login's address; counts lines for diagnostics."""
+    """Calls `on_failure(ips, at)` once per failed login with its addresses; counts for diagnostics."""
 
     def __init__(self, on_failure):
         super().__init__(logging.WARNING)
@@ -60,6 +60,4 @@ class FailedLogins(logging.Handler):
             return
         self.seen += 1
         self.ambiguous += len(found) > 1
-        at = datetime.fromtimestamp(record.created, timezone.utc)
-        for ip in found:
-            self._on_failure(ip, at)
+        self._on_failure(found, datetime.fromtimestamp(record.created, timezone.utc))
