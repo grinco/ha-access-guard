@@ -49,3 +49,19 @@ jobs:
         run: python3 tests/test_policy.py
       - name: integration against Home Assistant
         run: python3 -m pytest -q
+
+  # A real Home Assistant container: install the previous release (or nothing), upgrade in place to
+  # this commit, and use it as a household and its phone would (tests/e2e/run.sh).
+  e2e:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        ha: ["2026.10.4", stable]
+        from: [previous, fresh]
+    name: e2e (${{ matrix.from }}, ${{ matrix.ha }})
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0          # the release tags, to find the previous release
+      - run: tests/e2e/run.sh "${{ matrix.ha }}" "${{ matrix.from }}"
